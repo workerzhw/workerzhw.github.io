@@ -9,3 +9,5 @@
 - 模型参数
 [params](./pic/qwen3.6%20params.png)  
 
+- llama in flash
+[llama in flash](./doc/debug_llm%20in%20flash.md)  

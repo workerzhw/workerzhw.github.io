@@ -7,3 +7,4 @@
 
 [qwen3.6-35b-a3b](./models/qwen/qwen3.6-35b-a3b.md) 
 
+## 有意思的项目
