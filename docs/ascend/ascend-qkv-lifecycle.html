@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一次 QKV 投影的完整生命周期 · 昇腾 910B</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; background: #eef1f5; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif; }
+  #wrap { height: 100vh; overflow: hidden; }
+  svg { display: block; width: 100%; height: 100%; cursor: grab; }
+  svg:active { cursor: grabbing; }
+  .hint {
+    position: fixed; right: 14px; bottom: 12px;
+    font-size: 11px; color: #64748b; background: rgba(255,255,255,.82);
+    border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 10px;
+    pointer-events: none; letter-spacing: .3px;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<div class="hint">滚轮缩放 · 拖拽平移 · 双击复位</div>
+<script>
+const IR = {
+  type: "architecture",
+  title: "一次 QKV 投影的完整生命周期",
+  subtitle: "Ascend 910B · x[4096,4096] × W_qkv[4096,4096]（Q/K/V 打包成一个 GEMM）· fp16 · Atlas 800T A2",
+  mapping: "名词 → 数字：Device = 910B（20 AIC + 40 AIV）· op = 1 个 MatMul · kernel = 1 份二进制 · task = 20 · blockIdx = 0…19 · base = 128×64×256 · L0C = 128KB · stream = 3 条 · workspace = GM 临时区",
+  canvas: [1600, 1220],
+  boundaries: [
+    { id: "host",    label: "① HOST · CPU 侧（kernel 尚未运行）",                       pos: [40, 130],  size: [600, 540], tone: "amber" },
+    { id: "device",  label: "② DEVICE · NPU 910B（20 AIC 矩阵单元 + 40 AIV 向量单元）", pos: [680, 130], size: [880, 540], tone: "cyan" },
+    { id: "core",    label: "③ 每核内部执行 · 核内切分流水",                              pos: [40, 688],  size: [800, 310], tone: "emerald" },
+    { id: "decode",  label: "④ decode 变体 · 切分决策必须在运行期",                       pos: [860, 688], size: [700, 310], tone: "violet" },
+    { id: "parallel",label: "⑤ 多任务并行发生在哪 —— 两层分开看",                        pos: [40, 1008], size: [1520, 200], tone: "slate" }
+  ],
+  components: [
+    // ---------- HOST ----------
+    { id: "torch", pos: [64, 164], size: [230, 56], tone: "white", align: "center",
+      title: "PyTorch → torch_npu", lines: ["op：QKV 投影 = 1 个 MatMul"] },
+    { id: "aclnn", pos: [318, 164], size: [298, 56], tone: "white", align: "center",
+      title: "aclnnGetWorkspaceSize", lines: ["第 1 段：算 Tiling + 申请 workspace"] },
+    { id: "tiling", pos: [64, 242], size: [552, 228], tone: "amber", titleOffset: 34, linesStart: 68, lineGap: 24,
+      title: "TilingFunc —— 纯 CPU 标量运算",
+      lines: [
+        "查硬件（启动时缓存一次）：AIC 20 · UB 192KB · L0C 128KB",
+        "反推 base 块：baseM / baseK / baseN = 128 / 64 / 256",
+        "验算：128 × 256 × 4B = 128KB = L0C 上限",
+        "网格：ceil(4096/128) × ceil(4096/256) = 32 × 16 = 512 块",
+        "512 ≥ 20 → blockDim = 20，每核循环领取 ≈ 26 块",
+        "切 M、N，不切 K → 各核写不相交，核间零同步"
+      ] },
+    { id: "outs", pos: [64, 490], size: [552, 88], tone: "white", titleOffset: 24, linesStart: 50, lineGap: 18,
+      title: "产出三件套（TilingFunc 的输出）",
+      lines: [
+        "TilingData（singleCoreM/N、base 块大小）",
+        "TilingKey（“不切 K”的预编译分支）· blockDim = 20"
+      ] },
+    { id: "cache", pos: [64, 594], size: [552, 56], tone: "emerald", align: "center",
+      title: "缓存命中 → 第 1 步整步跳过", lines: ["同 shape 第二次调用直接命中参数"] },
+
+    // ---------- DEVICE ----------
+    { id: "launch", pos: [704, 164], size: [380, 56], tone: "white", align: "center",
+      title: "aclrtLaunchKernel(func, numBlocks=20)", lines: ["打包成 SQE → 硬件任务调度器"] },
+    { id: "spmd", pos: [1104, 164], size: [432, 56], tone: "white", align: "center",
+      title: "SPMD · 20 个 task", lines: ["同一份 kernel 二进制，只靠 blockIdx 区分"] },
+
+    // 20 个 AIC（5 × 4）
+    { id: "aic0",  pos: [704,  244], size: [84, 52], tone: "white", align: "center", title: "AIC 0",  lines: ["task 0"] },
+    { id: "aic1",  pos: [798,  244], size: [84, 52], tone: "white", align: "center", title: "AIC 1",  lines: ["task 1"] },
+    { id: "aic2",  pos: [892,  244], size: [84, 52], tone: "white", align: "center", title: "AIC 2",  lines: ["task 2"] },
+    { id: "aic3",  pos: [986,  244], size: [84, 52], tone: "white", align: "center", title: "AIC 3",  lines: ["task 3"] },
+    { id: "aic4",  pos: [1080, 244], size: [84, 52], tone: "white", align: "center", title: "AIC 4",  lines: ["task 4"] },
+    { id: "aic5",  pos: [704,  302], size: [84, 52], tone: "white", align: "center", title: "AIC 5",  lines: ["task 5"] },
+    { id: "aic6",  pos: [798,  302], size: [84, 52], tone: "white", align: "center", title: "AIC 6",  lines: ["task 6"] },
+    { id: "aic7",  pos: [892,  302], size: [84, 52], tone: "white", align: "center", title: "AIC 7",  lines: ["task 7"] },
+    { id: "aic8",  pos: [986,  302], size: [84, 52], tone: "white", align: "center", title: "AIC 8",  lines: ["task 8"] },
+    { id: "aic9",  pos: [1080, 302], size: [84, 52], tone: "white", align: "center", title: "AIC 9",  lines: ["task 9"] },
+    { id: "aic10", pos: [704,  360], size: [84, 52], tone: "white", align: "center", title: "AIC 10", lines: ["task 10"] },
+    { id: "aic11", pos: [798,  360], size: [84, 52], tone: "white", align: "center", title: "AIC 11", lines: ["task 11"] },
+    { id: "aic12", pos: [892,  360], size: [84, 52], tone: "white", align: "center", title: "AIC 12", lines: ["task 12"] },
+    { id: "aic13", pos: [986,  360], size: [84, 52], tone: "white", align: "center", title: "AIC 13", lines: ["task 13"] },
+    { id: "aic14", pos: [1080, 360], size: [84, 52], tone: "white", align: "center", title: "AIC 14", lines: ["task 14"] },
+    { id: "aic15", pos: [704,  418], size: [84, 52], tone: "white", align: "center", title: "AIC 15", lines: ["task 15"] },
+    { id: "aic16", pos: [798,  418], size: [84, 52], tone: "white", align: "center", title: "AIC 16", lines: ["task 16"] },
+    { id: "aic17", pos: [892,  418], size: [84, 52], tone: "white", align: "center", title: "AIC 17", lines: ["task 17"] },
+    { id: "aic18", pos: [986,  418], size: [84, 52], tone: "white", align: "center", title: "AIC 18", lines: ["task 18"] },
+    { id: "aic19", pos: [1080, 418], size: [84, 52], tone: "white", align: "center", title: "AIC 19", lines: ["task 19"] },
+
+    { id: "blockidx", pos: [1176, 244], size: [360, 226], tone: "white", titleOffset: 28, linesStart: 56, lineGap: 26,
+      title: "blockIdx → 数据分片",
+      lines: [
+        "offset = 段长 × blockIdx",
+        "核 0 → M[0:512] × N[0:256]",
+        "核 1 → M[0:512] × N[256:512]",
+        "… 共 20 个 task，每核 ≈ 26 块",
+        "GetBlockIdx() 返回“我是几号”",
+        "输出块互不相交 → 核间零同步"
+      ] },
+
+    { id: "stream", pos: [704, 488], size: [832, 160], tone: "white", titleOffset: 30, linesStart: 66, lineGap: 28,
+      title: "stream —— 同流严格排队，异流可并行",
+      lines: [
+        "stream 0：QKV → FA → O_proj（要等 20 个核全部跑完）",
+        "stream 1：HCCL 通信算子 —— 与计算流并行",
+        "stream 2：AI CPU 流 —— TopK / 查表类任务"
+      ] },
+
+    // ---------- 核内流水 ----------
+    { id: "gm",  pos: [60, 728],  size: [110, 58], tone: "white", align: "center", title: "GM / workspace", lines: ["输出块 + 临时区"] },
+    { id: "mte", pos: [190, 728], size: [145, 58], tone: "white", align: "center", title: "MTE 搬运",        lines: ["双缓冲：搬运 ‖ 计算"] },
+    { id: "l0",  pos: [355, 728], size: [105, 58], tone: "white", align: "center", title: "L0A / L0B",       lines: ["A、B tile 缓存"] },
+    { id: "cube",pos: [480, 728], size: [150, 58], tone: "white", align: "center", title: "Cube",            lines: ["16×16×16 → 4096 MAC"] },
+    { id: "l0c", pos: [650, 728], size: [135, 58], tone: "white", align: "center", title: "L0C",             lines: ["fp32 累加 128KB"] },
+
+    // ---------- decode ----------
+    { id: "case1", pos: [880, 728], size: [320, 104], tone: "white", titleOffset: 26, linesStart: 52, lineGap: 20,
+      title: "m=1, k=3584, n=8192",
+      lines: ["M 轴切不动 → 512 块坍缩成 N 一排", "20 核 × singleCoreN = 416", "N 轴正好分满 20 核"] },
+    { id: "case2", pos: [1220, 728], size: [320, 104], tone: "white", titleOffset: 26, linesStart: 52, lineGap: 20,
+      title: "m=1, k=8192, n=3072",
+      lines: ["N 方向只够分 12 核", "其余 8 核空闲"] },
+
+    // ---------- 两层并行 ----------
+    { id: "lane1", pos: [64, 1044], size: [728, 144], tone: "white", titleOffset: 30, linesStart: 60, lineGap: 24,
+      title: "算子内 · 编译器管 · 瞬时占用",
+      lines: ["blockDim = 20 是“本次启动占 20 核”的声明", "kernel 跑完，核立刻归还 —— 不是划地盘"] },
+    { id: "lane2", pos: [820, 1044], size: [716, 144], tone: "white", titleOffset: 30, linesStart: 60, lineGap: 22,
+      title: "算子间 / 任务间 · 运行时队列管",
+      lines: [
+        "QKV → FA → O_proj 同一条 stream 严格排队",
+        "HCCL 走另一条 stream 并行；TopK/查表走 AI CPU 流",
+        "核全忙时别的流只能排队 —— 时分复用，无空间划分"
+      ] }
+  ],
+  connections: [
+    { from: "torch", to: "aclnn", points: [[294, 192], [318, 192]], color: "#94a3b8" },
+    { from: "aclnn", to: "tiling", points: [[467, 220], [467, 242]], color: "#94a3b8" },
+    { from: "tiling", to: "outs", points: [[340, 470], [340, 490]], color: "#94a3b8" },
+    { from: "outs", to: "cache", points: [[340, 578], [340, 594]], color: "#94a3b8" },
+    { from: "outs", to: "launch", points: [[616, 534], [700, 192]], color: "#64748b", variant: "emphasis",
+      label: "三件套", labelPos: [656, 352] },
+    { from: "launch", to: "aic2", points: [[894, 220], [894, 244]], color: "#64748b", variant: "emphasis",
+      label: "20 个 task", labelPos: [930, 232] },
+    { from: "launch", to: "spmd", points: [[1084, 192], [1104, 192]], color: "#94a3b8" },
+    { from: "aic15", to: "stream", points: [[704, 470], [704, 488]], color: "#94a3b8" },
+    { from: "gm",  to: "mte",  points: [[170, 757], [190, 757]], color: "#94a3b8" },
+    { from: "mte", to: "l0",   points: [[335, 757], [355, 757]], color: "#94a3b8" },
+    { from: "l0",  to: "cube", points: [[460, 757], [480, 757]], color: "#94a3b8" },
+    { from: "cube", to: "l0c", points: [[630, 757], [650, 757]], color: "#94a3b8" }
+  ],
+  notes: [
+    { pos: [60, 806], text: "沿 K 每轮 64 → 发射 Cube 指令；L0C 装得下 128×256 的输出块" },
+    { pos: [60, 828], text: "MTE 与 Cube 重叠执行；各核写回 GM 的不同分片，全程无核间同步" },
+    { pos: [880, 852], text: "同一算子、同一份 kernel 二进制，切法随 shape 完全不同" },
+    { pos: [880, 874], text: "→ 所以 Tiling 在 Host 运行期做，而不是编译期写死" }
+  ]
+};
+
+const W = IR.canvas[0], H = IR.canvas[1];
+const toneMap = {
+  white:   { fill: "#ffffff", stroke: "#d5dbe3", label: "#475569" },
+  amber:   { fill: "#fff7e6", stroke: "#d9b879", label: "#8a6420" },
+  cyan:    { fill: "#eff7fc", stroke: "#93c1d8", label: "#1d5f7c" },
+  emerald: { fill: "#effaf3", stroke: "#9ccfb4", label: "#24684a" },
+  violet:  { fill: "#f5effb", stroke: "#bda9df", label: "#4b327a" },
+  slate:   { fill: "#f1f4f8", stroke: "#a9b3bf", label: "#465467" }
+};
+
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function textWidth(str, size) {
+  let w = 0;
+  for (const ch of str) {
+    if (/[　-鿿＀-￯]/.test(ch)) w += size;
+    else if (ch === " ") w += size * 0.32;
+    else w += size * 0.58;
+  }
+  return w;
+}
+
+let svg = "";
+svg += `<svg id="arch" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">`;
+
+// defs
+svg += `<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+  </marker>
+  <filter id="soft" x="-15%" y="-15%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="2.5" stdDeviation="3.5" flood-color="#0f172a" flood-opacity="0.08"/>
+  </filter>
+  <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+    <path d="M 44 0 L 0 0 0 44" fill="none" stroke="#e6eaf0" stroke-width="1"/>
+  </pattern>
+</defs>`;
+
+svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="#fbfcfe"/>`;
+svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="url(#grid)" opacity="0.55"/>`;
+
+// header
+svg += `<text x="40" y="50" font-size="30" font-weight="800" fill="#0f172a">${esc(IR.title)}</text>`;
+svg += `<text x="40" y="78" font-size="14.5" fill="#64748b">${esc(IR.subtitle)}</text>`;
+svg += `<text x="40" y="101" font-size="12.6" fill="#8492a6">${esc(IR.mapping)}</text>`;
+
+// boundaries
+for (const b of IR.boundaries) {
+  const t = toneMap[b.tone] || toneMap.slate;
+  const [x, y] = b.pos, [w, h] = b.size;
+  svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="${t.fill}" fill-opacity="0.62" stroke="${t.stroke}" stroke-width="1.6" stroke-dasharray="9 7"/>`;
+  svg += `<text x="${x + 20}" y="${y + 28}" font-size="12.5" font-weight="700" letter-spacing="1.1" fill="${t.label}">${esc(b.label)}</text>`;
+}
+
+// components
+for (const c of IR.components) {
+  const t = toneMap[c.tone || "white"];
+  const [x, y] = c.pos, [w, h] = c.size;
+  const compact = h < 72;
+
+  svg += `<g filter="url(#soft)">`;
+  svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10" fill="${t.fill}" stroke="${t.stroke}" stroke-width="1.25"/>`;
+
+  if (c.accent) {
+    svg += `<rect x="${x}" y="${y + 10}" width="3.5" height="${h - 20}" rx="1.75" fill="${c.accent}" opacity="0.85"/>`;
+  }
+
+  if (c.align === "center") {
+    const titleSize = compact ? 12.6 : 14.4;
+    const ty = y + (compact ? 24 : 26);
+    svg += `<text x="${x + w / 2}" y="${ty}" text-anchor="middle" font-size="${titleSize}" font-weight="700" fill="#1f2937">${esc(c.title)}</text>`;
+    (c.lines || []).forEach((ln, i) => {
+      const ly = ty + (compact ? 16 : 22) + i * (compact ? 13 : 18);
+      const fs = compact ? 10.6 : 12.3;
+      svg += `<text x="${x + w / 2}" y="${ly}" text-anchor="middle" font-size="${fs}" fill="#475569" xml:space="preserve">${esc(ln)}</text>`;
+    });
+  } else {
+    const titleSize = c.titleSize || 14.6;
+    svg += `<text x="${x + 16}" y="${y + (c.titleOffset || 26)}" font-size="${titleSize}" font-weight="700" fill="#1f2937">${esc(c.title)}</text>`;
+    const gap = c.lineGap || 18;
+    (c.lines || []).forEach((ln, i) => {
+      const ly = y + (c.linesStart || 50) + i * gap;
+      svg += `<text x="${x + 16}" y="${ly}" font-size="${c.lineSize || 12.3}" fill="#475569" xml:space="preserve">${esc(ln)}</text>`;
+    });
+  }
+
+  if (c.tag) {
+    svg += `<text x="${x + w - 13}" y="${y + 18}" text-anchor="end" font-size="9.5" letter-spacing="1.1" fill="#94a3b8">${esc(c.tag)}</text>`;
+  }
+  svg += `</g>`;
+}
+
+// connections
+for (const c of IR.connections) {
+  const pts = c.points;
+  const d = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0] + " " + p[1]).join(" ");
+  const color = c.color || "#94a3b8";
+  const width = c.variant === "emphasis" ? 2.7 : 1.8;
+  const dash = c.variant === "dashed" ? ` stroke-dasharray="6 6"` : "";
+  svg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${width}"${dash} marker-end="url(#arrow)"/>`;
+
+  if (c.label) {
+    const [lx, ly] = c.labelPos;
+    const fs = 11.2;
+    const lw = textWidth(c.label, fs) + 12;
+    svg += `<rect x="${lx - lw / 2}" y="${ly - 12}" width="${lw}" height="20" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#e2e8f0" stroke-width="0.8"/>`;
+    svg += `<text x="${lx}" y="${ly + 2}" text-anchor="middle" font-size="${fs}" font-weight="600" fill="#475569">${esc(c.label)}</text>`;
+  }
+}
+
+// free notes
+for (const n of IR.notes) {
+  svg += `<text x="${n.pos[0]}" y="${n.pos[1]}" font-size="12.2" fill="#64748b" xml:space="preserve">${esc(n.text)}</text>`;
+}
+
+svg += `</svg>`;
+
+const wrap = document.getElementById("wrap");
+wrap.innerHTML = svg;
+
+// zoom / pan
+const svgEl = document.getElementById("arch");
+let box = { x: 0, y: 0, w: W, h: H };
+
+function applyBox() {
+  const bw = Math.min(Math.max(box.w, 620), W * 1.8);
+  const bh = bw * (H / W);
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  box = { x: cx - bw / 2, y: cy - bh / 2, w: bw, h: bh };
+  svgEl.setAttribute("viewBox", `${box.x} ${box.y} ${box.w} ${box.h}`);
+}
+applyBox();
+
+svgEl.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const k = e.deltaY < 0 ? 0.92 : 1.08;
+  const nw = Math.min(Math.max(box.w * k, 620), W * 1.8);
+  const nh = nw * (H / W);
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  box = { x: cx - nw / 2, y: cy - nh / 2, w: nw, h: nh };
+  svgEl.setAttribute("viewBox", `${box.x} ${box.y} ${box.w} ${box.h}`);
+}, { passive: false });
+
+let dragging = false, sx = 0, sy = 0, bx = 0, by = 0;
+svgEl.addEventListener("pointerdown", (e) => {
+  dragging = true; sx = e.clientX; sy = e.clientY; bx = box.x; by = box.y;
+  svgEl.setPointerCapture(e.pointerId);
+});
+svgEl.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const rect = svgEl.getBoundingClientRect();
+  const scaleX = box.w / rect.width;
+  const scaleY = box.h / rect.height;
+  box.x = bx - (e.clientX - sx) * scaleX;
+  box.y = by - (e.clientY - sy) * scaleY;
+  svgEl.setAttribute("viewBox", `${box.x} ${box.y} ${box.w} ${box.h}`);
+});
+svgEl.addEventListener("pointerup", () => { dragging = false; });
+svgEl.addEventListener("pointercancel", () => { dragging = false; });
+svgEl.addEventListener("dblclick", () => {
+  box = { x: 0, y: 0, w: W, h: H };
+  svgEl.setAttribute("viewBox", `0 0 ${W} ${H}`);
+});
+</script>
+</body>
+</html>
