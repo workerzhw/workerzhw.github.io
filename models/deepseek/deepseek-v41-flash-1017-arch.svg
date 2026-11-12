@@ -1,0 +1,185 @@
+<svg width="100%" viewBox="0 0 900 830" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <style>
+    .t { fill: var(--foreground, #1a1a1a); }
+    .ts { fill: var(--muted-foreground, #6b6b6b); font-size: 12px; }
+    .th { fill: var(--foreground, #1a1a1a); font-size: 14px; font-weight: 500; }
+    .c-gray { fill: #F1EFE8; stroke: #5F5E5A; }
+    .c-blue { fill: #E6F1FB; stroke: #185FA5; }
+    .c-teal { fill: #E1F5EE; stroke: #0F6E56; }
+    .c-amber { fill: #FAEEDA; stroke: #854F0B; }
+    .c-purple { fill: #EEEDFE; stroke: #534AB7; }
+    rect.c-gray, rect.c-blue, rect.c-teal, rect.c-amber, rect.c-purple { stroke-width: 0.5; }
+    .arr { stroke: #888780; stroke-width: 1.5; fill: none; }
+    text { font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  </style>
+
+  <rect class="c-teal" x="200" y="18" width="12" height="12" rx="3"/>
+  <text class="ts" x="218" y="24" dominant-baseline="central">Full 全量计算</text>
+  <rect class="c-amber" x="340" y="18" width="12" height="12" rx="3"/>
+  <text class="ts" x="358" y="24" dominant-baseline="central">Reindex / Reuse 复用</text>
+  <rect class="c-blue" x="540" y="18" width="12" height="12" rx="3"/>
+  <text class="ts" x="558" y="24" dominant-baseline="central">仅 SWA</text>
+  <rect class="c-purple" x="640" y="18" width="12" height="12" rx="3"/>
+  <text class="ts" x="658" y="24" dominant-baseline="central">辅助模块 / KV 流</text>
+
+  <g class="c-gray">
+    <rect x="20" y="60" width="150" height="48" rx="8"/>
+    <text class="th" x="95" y="81" text-anchor="middle" dominant-baseline="central">图像</text>
+    <text class="ts" x="95" y="97" text-anchor="middle" dominant-baseline="central">DeepSeek-ViT</text>
+  </g>
+  <line x1="95" y1="108" x2="95" y2="124" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="c-gray">
+    <rect x="20" y="128" width="150" height="88" rx="8"/>
+    <text class="th" x="95" y="148" text-anchor="middle" dominant-baseline="central">视觉编码</text>
+    <text class="ts" x="95" y="166" text-anchor="middle" dominant-baseline="central">2D-RoPE · patch 14</text>
+    <text class="ts" x="95" y="182" text-anchor="middle" dominant-baseline="central">pixel-unshuffle ÷9</text>
+    <text class="ts" x="95" y="198" text-anchor="middle" dominant-baseline="central">MLP 投影 → 5120</text>
+  </g>
+  <line x1="95" y1="216" x2="95" y2="232" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="c-gray">
+    <rect x="20" y="236" width="150" height="48" rx="8"/>
+    <text class="th" x="95" y="257" text-anchor="middle" dominant-baseline="central">输入序列</text>
+    <text class="ts" x="95" y="273" text-anchor="middle" dominant-baseline="central">文 + 图 拼接</text>
+  </g>
+  <line x1="170" y1="260" x2="194" y2="260" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="c-gray">
+    <rect x="20" y="304" width="150" height="48" rx="8"/>
+    <text class="th" x="95" y="325" text-anchor="middle" dominant-baseline="central">文本 token</text>
+    <text class="ts" x="95" y="341" text-anchor="middle" dominant-baseline="central">文本 Embedding</text>
+  </g>
+  <line x1="95" y1="302" x2="95" y2="288" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="c-gray">
+    <rect x="198" y="60" width="280" height="360" rx="16"/>
+    <text class="th" x="214" y="84" dominant-baseline="central">因果 Encoder × 20 层</text>
+  </g>
+  <g class="c-blue">
+    <rect x="214" y="100" width="248" height="52" rx="8"/>
+    <text class="th" x="338" y="121" text-anchor="middle" dominant-baseline="central">第 0–1 层 · 仅 SWA</text>
+    <text class="ts" x="338" y="139" text-anchor="middle" dominant-baseline="central">窗口 128 · KV FP8</text>
+  </g>
+  <g class="c-teal">
+    <rect x="214" y="168" width="248" height="84" rx="8"/>
+    <text class="th" x="338" y="188" text-anchor="middle" dominant-baseline="central">第 2–19 层 · CSA2 ×18</text>
+    <text class="ts" x="338" y="206" text-anchor="middle" dominant-baseline="central">压缩率 2 · Full / Reuse</text>
+    <text class="ts" x="338" y="222" text-anchor="middle" dominant-baseline="central">跨层共享主 KV + 索引 K</text>
+  </g>
+  <g class="c-purple">
+    <rect x="214" y="268" width="248" height="64" rx="8"/>
+    <text class="th" x="338" y="288" text-anchor="middle" dominant-baseline="central">Engram 条件记忆 ×2</text>
+    <text class="ts" x="338" y="306" text-anchor="middle" dominant-baseline="central">挂载第 1 / 14 层 · 196B</text>
+    <text class="ts" x="338" y="322" text-anchor="middle" dominant-baseline="central">2/3/4-gram · 1600 万条目</text>
+  </g>
+  <g class="c-purple">
+    <rect x="214" y="348" width="248" height="52" rx="8"/>
+    <text class="th" x="338" y="369" text-anchor="middle" dominant-baseline="central">H₂₀ · 编码器末层隐状态</text>
+    <text class="ts" x="338" y="387" text-anchor="middle" dominant-baseline="central">全局 KV 的唯一来源</text>
+  </g>
+
+  <g class="c-gray">
+    <rect x="508" y="60" width="280" height="360" rx="16"/>
+    <text class="th" x="524" y="84" dominant-baseline="central">Decoder × 20 层</text>
+  </g>
+  <g class="c-teal">
+    <rect x="524" y="108" width="248" height="68" rx="8"/>
+    <text class="th" x="648" y="128" text-anchor="middle" dominant-baseline="central">第 20 层 · CSA2 Full</text>
+    <text class="ts" x="648" y="146" text-anchor="middle" dominant-baseline="central">全量打分 → Top-512</text>
+    <text class="ts" x="648" y="162" text-anchor="middle" dominant-baseline="central">建候选池 2048 块 × 8</text>
+  </g>
+  <g class="c-amber">
+    <rect x="524" y="192" width="248" height="84" rx="8"/>
+    <text class="th" x="648" y="212" text-anchor="middle" dominant-baseline="central">第 21–39 层 · CSA2</text>
+    <text class="ts" x="648" y="230" text-anchor="middle" dominant-baseline="central">Reindex 池内重选 Top-512</text>
+    <text class="ts" x="648" y="246" text-anchor="middle" dominant-baseline="central">Reuse 复用最新 Top-K</text>
+    <text class="ts" x="648" y="262" text-anchor="middle" dominant-baseline="central">索引成本与上下文无关</text>
+  </g>
+  <g class="c-purple">
+    <rect x="524" y="292" width="248" height="64" rx="8"/>
+    <text class="th" x="648" y="312" text-anchor="middle" dominant-baseline="central">分层稀疏索引器</text>
+    <text class="ts" x="648" y="330" text-anchor="middle" dominant-baseline="central">池内搜索 · 成本与长度无关</text>
+    <text class="ts" x="648" y="346" text-anchor="middle" dominant-baseline="central">训练推理一致 · 后训练引入</text>
+  </g>
+
+  <line x1="338" y1="400" x2="338" y2="436" class="arr" marker-end="url(#arrow)"/>
+  <path d="M478 484 L494 484 L494 142 L504 142" fill="none" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="c-purple">
+    <rect x="198" y="440" width="280" height="88" rx="8"/>
+    <text class="th" x="338" y="460" text-anchor="middle" dominant-baseline="central">全局 KV：C = H₂₀ · W_KV</text>
+    <text class="ts" x="338" y="478" text-anchor="middle" dominant-baseline="central">逐层独立投影 · 每层一套权重</text>
+    <text class="ts" x="338" y="494" text-anchor="middle" dominant-baseline="central">FP4 存储 · 890 B/token</text>
+    <text class="ts" x="338" y="510" text-anchor="middle" dominant-baseline="central">SWA KV：各层独立 · FP8</text>
+  </g>
+
+  <g class="c-gray">
+    <rect x="198" y="552" width="280" height="64" rx="8"/>
+    <text class="th" x="338" y="572" text-anchor="middle" dominant-baseline="central">每层 FFN：DeepSeekMoE</text>
+    <text class="ts" x="338" y="590" text-anchor="middle" dominant-baseline="central">384 路由 + 1 共享 · top-6</text>
+    <text class="ts" x="338" y="606" text-anchor="middle" dominant-baseline="central">sqrtsoftplus · noaux 均衡</text>
+  </g>
+
+  <g class="c-gray">
+    <rect x="198" y="636" width="280" height="64" rx="8"/>
+    <text class="th" x="338" y="656" text-anchor="middle" dominant-baseline="central">层间残差：Single-Pass mHC</text>
+    <text class="ts" x="338" y="674" text-anchor="middle" dominant-baseline="central">Mega-mHC 融合 kernel</text>
+    <text class="ts" x="338" y="690" text-anchor="middle" dominant-baseline="central">激活流量减半 · 达理论下限</text>
+  </g>
+
+  <line x1="648" y1="420" x2="648" y2="446" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="c-purple">
+    <rect x="508" y="450" width="280" height="88" rx="8"/>
+    <text class="th" x="648" y="470" text-anchor="middle" dominant-baseline="central">DSpark 投机解码</text>
+    <text class="ts" x="648" y="488" text-anchor="middle" dominant-baseline="central">3 草稿块 · SWA 128 · 5 位/次</text>
+    <text class="ts" x="648" y="504" text-anchor="middle" dominant-baseline="central">Markov 头 + 置信度调度</text>
+    <text class="ts" x="648" y="520" text-anchor="middle" dominant-baseline="central">预训练后单独训练 · 替代 MTP</text>
+  </g>
+  <line x1="648" y1="538" x2="648" y2="554" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="c-gray">
+    <rect x="508" y="558" width="280" height="52" rx="8"/>
+    <text class="th" x="648" y="579" text-anchor="middle" dominant-baseline="central">LM Head</text>
+    <text class="ts" x="648" y="597" text-anchor="middle" dominant-baseline="central">自回归生成文本输出</text>
+  </g>
+
+  <g class="c-gray">
+    <rect x="20" y="730" width="164" height="62" rx="8"/>
+    <text class="th" x="102" y="752" text-anchor="middle" dominant-baseline="central">552B</text>
+    <text class="ts" x="102" y="770" text-anchor="middle" dominant-baseline="central">骨干参数</text>
+    <text class="ts" x="102" y="784" text-anchor="middle" dominant-baseline="central">+196B Engram</text>
+  </g>
+  <g class="c-gray">
+    <rect x="192" y="730" width="164" height="62" rx="8"/>
+    <text class="th" x="274" y="752" text-anchor="middle" dominant-baseline="central">8B / 16B</text>
+    <text class="ts" x="274" y="770" text-anchor="middle" dominant-baseline="central">激活 prefill · decode</text>
+    <text class="ts" x="274" y="784" text-anchor="middle" dominant-baseline="central">agent 负载优化</text>
+  </g>
+  <g class="c-gray">
+    <rect x="364" y="730" width="164" height="62" rx="8"/>
+    <text class="th" x="446" y="752" text-anchor="middle" dominant-baseline="central">890 B</text>
+    <text class="ts" x="446" y="770" text-anchor="middle" dominant-baseline="central">每 token 全局 KV</text>
+    <text class="ts" x="446" y="784" text-anchor="middle" dominant-baseline="central">FP4 量化 · HBM 常驻</text>
+  </g>
+  <g class="c-gray">
+    <rect x="536" y="730" width="164" height="62" rx="8"/>
+    <text class="th" x="618" y="752" text-anchor="middle" dominant-baseline="central">1M</text>
+    <text class="ts" x="618" y="770" text-anchor="middle" dominant-baseline="central">上下文长度</text>
+    <text class="ts" x="618" y="784" text-anchor="middle" dominant-baseline="central">YaRN：64K × 16 外推</text>
+  </g>
+  <g class="c-gray">
+    <rect x="708" y="730" width="164" height="62" rx="8"/>
+    <text class="th" x="790" y="752" text-anchor="middle" dominant-baseline="central">45T</text>
+    <text class="ts" x="790" y="770" text-anchor="middle" dominant-baseline="central">预训练 token</text>
+    <text class="ts" x="790" y="784" text-anchor="middle" dominant-baseline="central">34T 时扩至 1M</text>
+  </g>
+
+  <text class="ts" x="450" y="816" text-anchor="middle">DeepSeek-V4.1-Flash-1017 · 依据官方技术报告 §2 与 config.json 绘制</text>
+</svg>
